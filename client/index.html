@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShareSpace — Compartilhamento de Tela</title>
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+    <!-- ============ JOIN SCREEN ============ -->
+    <div id="join-screen">
+        <div class="join-card">
+            <h1>Entrar em uma sala</h1>
+            <p class="join-sub">Compartilhamento de tela com qualidade e baixa latência</p>
+            <div class="field-group">
+                <label for="username">Seu nome</label>
+                <input type="text" id="username" placeholder="ex: Ana Silva" autocomplete="off" required>
+            </div>
+            <div class="field-group">
+                <label for="room-id">ID da sala</label>
+                <input type="text" id="room-id" placeholder="ex: dev-room" autocomplete="off" required>
+            </div>
+            <button id="btn-join" class="btn btn-primary btn-full">
+                <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm3.5 8.5l-5 3A.5.5 0 018 13V7a.5.5 0 01.5-.5l5 3a.5.5 0 010 .866z"/></svg>
+                Entrar / Criar Sala
+            </button>
+            <p id="join-error" class="error-msg"></p>
+        </div>
+    </div>
+
+    <!-- ============ ROOM SCREEN ============ -->
+    <div id="room-screen" class="hidden">
+
+        <!-- SIDEBAR -->
+        <aside id="sidebar">
+            <div class="sidebar-header">
+                <span class="brand-name-sm">Screen Share</span>
+            </div>
+
+            <div class="sidebar-section">
+                <span class="sidebar-label">Sala</span>
+                <span id="lbl-room" class="sidebar-value">---</span>
+            </div>
+
+            <div class="sidebar-section">
+                <span class="sidebar-label">Participantes</span>
+                <div class="participant-count">
+                    <span id="lbl-participants">0</span>
+                    <span class="online-dot"></span>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <span class="sidebar-label">Status</span>
+                <span id="lbl-state" class="state-badge">Desconectado</span>
+            </div>
+
+            <!-- Stream list -->
+            <div class="sidebar-section streams-section">
+                <span class="sidebar-label">Streams Ativas</span>
+                <ul id="stream-list" class="stream-list">
+                    <li class="stream-list-empty">Nenhuma stream ativa</li>
+                </ul>
+            </div>
+
+            <div class="sidebar-bottom">
+                <button id="btn-share" class="btn btn-primary btn-sidebar">
+                    <svg viewBox="0 0 20 20" fill="currentColor"><path d="M13 7H7v6h6V7z"/><path fill-rule="evenodd" d="M3 3a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2H3zm14 2H3v10h14V5z" clip-rule="evenodd"/></svg>
+                    Compartilhar Tela
+                </button>
+                <button id="btn-stop-share" class="btn btn-danger btn-sidebar hidden">
+                    <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd"/></svg>
+                    Parar Compartilhamento
+                </button>
+                <button id="btn-leave" class="btn btn-ghost btn-sidebar">
+                    <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/></svg>
+                    Sair da Sala
+                </button>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main id="main-area">
+
+            <!-- Mobile top bar -->
+            <div class="mobile-topbar">
+                <button id="btn-menu" class="icon-btn" aria-label="Menu">
+                    <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 5h14a1 1 0 010 2H3a1 1 0 010-2zm0 4h14a1 1 0 010 2H3a1 1 0 010-2zm0 4h14a1 1 0 010 2H3a1 1 0 010-2z" clip-rule="evenodd"/></svg>
+                </button>
+                <span class="brand-name-sm">Screen Share</span>
+                <span id="lbl-state-mobile" class="state-badge-mobile">●</span>
+            </div>
+
+            <!-- Video grid -->
+            <div id="video-grid">
+                <div id="video-placeholder" class="placeholder">
+                    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="4" y="10" width="56" height="38" rx="4" stroke="currentColor" stroke-width="2" fill="none" stroke-dasharray="6 4"/>
+                        <path d="M24 28l8-8 5 5 8-9" stroke="#6C8EFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M28 48v6M36 48v6M20 54h24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    <p>Nenhuma tela sendo compartilhada</p>
+                    <span>Clique em <strong>Compartilhar Tela</strong> para começar</span>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+</body>
+</html>

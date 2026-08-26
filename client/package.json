@@ -1,0 +1,17 @@
+{
+  "name": "screen-share-client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "mediasoup-client": "^3.7.3",
+    "socket.io-client": "^4.7.2"
+  },
+  "devDependencies": {
+    "vite": "^8.2.2"
+  }
+}
