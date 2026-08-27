@@ -3,44 +3,52 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ShareSpace — Compartilhamento de Tela</title>
+    <title>ShareSpace - Compartilhamento de Tela</title>
     <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-
     <!-- ============ JOIN SCREEN ============ -->
     <div id="join-screen">
         <div class="join-card">
             <h1>Entrar em uma sala</h1>
             <p class="join-sub">Compartilhamento de tela com qualidade e baixa latência</p>
+            
             <div class="field-group">
-                <label for="username">Seu nome</label>
+                <label for="username">Nome</label>
                 <input type="text" id="username" placeholder="ex: Ana Silva" autocomplete="off" required>
             </div>
+            
             <div class="field-group">
-                <label for="room-id">ID da sala</label>
-                <input type="text" id="room-id" placeholder="ex: dev-room" autocomplete="off" required>
+                <label for="room-id">Código da sala</label>
+                <input type="text" id="room-id" placeholder="Deixe em branco para gerar uma nova" autocomplete="off">
             </div>
+
             <button id="btn-join" class="btn btn-primary btn-full">
-                <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm3.5 8.5l-5 3A.5.5 0 018 13V7a.5.5 0 01.5-.5l5 3a.5.5 0 010 .866z"/></svg>
+                
                 Entrar / Criar Sala
             </button>
+            
             <p id="join-error" class="error-msg"></p>
         </div>
     </div>
 
     <!-- ============ ROOM SCREEN ============ -->
     <div id="room-screen" class="hidden">
-
+        
         <!-- SIDEBAR -->
         <aside id="sidebar">
             <div class="sidebar-header">
                 <span class="brand-name-sm">Screen Share</span>
             </div>
-
+            
             <div class="sidebar-section">
                 <span class="sidebar-label">Sala</span>
-                <span id="lbl-room" class="sidebar-value">---</span>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span id="lbl-room" class="sidebar-value" style="word-break: break-all;">---</span>
+                    <button id="btn-copy-link" class="icon-btn" title="Copiar link da sala" style="width: 28px; height: 28px; margin-left: 8px;">
+                        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z"/><path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z"/></svg>
+                    </button>
+                </div>
             </div>
 
             <div class="sidebar-section">
@@ -82,14 +90,13 @@
 
         <!-- MAIN CONTENT -->
         <main id="main-area">
-
             <!-- Mobile top bar -->
             <div class="mobile-topbar">
                 <button id="btn-menu" class="icon-btn" aria-label="Menu">
                     <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 5h14a1 1 0 010 2H3a1 1 0 010-2zm0 4h14a1 1 0 010 2H3a1 1 0 010-2zm0 4h14a1 1 0 010 2H3a1 1 0 010-2z" clip-rule="evenodd"/></svg>
                 </button>
                 <span class="brand-name-sm">Screen Share</span>
-                <span id="lbl-state-mobile" class="state-badge-mobile">●</span>
+                <span id="lbl-state-mobile" class="state-badge-mobile">•</span>
             </div>
 
             <!-- Video grid -->

@@ -7,17 +7,17 @@
 
 :root {
     /* Palette */
-    --bg-base:      #0e0f13;
-    --bg-surface:   #16181f;
+    --bg-base:      #000000;
+    --bg-surface:   #161616;
     --bg-elevated:  #1e2029;
     --bg-hover:     #252733;
     --bg-active:    #2c2f40;
 
-    --accent:       #6C8EFF;
+    --accent:       #0034df;
     --accent-dim:   #3a52b8;
     --accent-glow:  rgba(108, 142, 255, 0.18);
 
-    --danger:       #f04e4e;
+    --danger:       #ff0000;
     --danger-dim:   #9b2929;
     --success:      #3ecf8e;
 
@@ -88,13 +88,13 @@ body {
 .btn:active:not(:disabled) { transform: scale(0.97); }
 
 .btn-primary  { background: var(--accent); color: #fff; }
-.btn-primary:hover:not(:disabled)  { background: #7fa0ff; }
+.btn-primary:hover:not(:disabled)  { background: #002cbe; }
 
 .btn-danger   { background: var(--danger); color: #fff; }
-.btn-danger:hover:not(:disabled)   { background: #ff6b6b; }
+.btn-danger:hover:not(:disabled)   { background: #b10000; }
 
 .btn-ghost    { background: transparent; color: var(--text-secondary); border: 1px solid var(--border-strong); }
-.btn-ghost:hover:not(:disabled)    { background: var(--bg-hover); color: var(--text-primary); }
+.btn-ghost:hover:not(:disabled)    {  color: var(--text-primary); }
 
 .btn-full     { width: 100%; justify-content: center; padding: 12px; }
 

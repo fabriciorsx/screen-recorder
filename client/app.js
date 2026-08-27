@@ -11,6 +11,16 @@ function log(event, data = null) {
         : console.log(`[CLIENT] [${ts}] ${event}`);
 }
 
+// Função para gerar um código aleatório com letras (maiúsculas/minúsculas) e números
+function generateRoomId(length = 9) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
+
 // ==================================================
 // STATE
 // ==================================================
@@ -19,13 +29,15 @@ let device = null;
 let producerTransport = null;
 let consumerTransport = null;
 
-// Agora usamos um array para suportar tanto áudio quanto vídeo
 let localProducers = [];
 let localStream = null;
 let consumers = new Map();
 
 // Mapa para associar producerIds aos socketIds (agrupamento)
 let producerToSocket = new Map();
+
+// Fila para evitar condição de corrida ao consumir múltiplas faixas simultaneamente
+let consumeQueue = Promise.resolve();
 
 // Stream metadata: key -> { id, label, isLocal, hidden, stream }
 let streamsMeta = new Map();
@@ -52,6 +64,7 @@ const ui = {
     streamList:       document.getElementById('stream-list'),
     btnMenu:          document.getElementById('btn-menu'),
     sidebar:          document.getElementById('sidebar'),
+    btnCopyLink:      document.getElementById('btn-copy-link'),
 };
 
 // ==================================================
@@ -89,6 +102,7 @@ ui.btnJoin.addEventListener('click', joinRoom);
 ui.btnShare.addEventListener('click', startScreenShare);
 ui.btnStopShare.addEventListener('click', stopScreenShare);
 ui.btnLeave.addEventListener('click', leaveRoom);
+ui.btnCopyLink?.addEventListener('click', copyRoomLink);
 
 // ==================================================
 // STATE BADGE
@@ -112,8 +126,14 @@ function setStateLabel(text, type = 'connected') {
 // ==================================================
 async function joinRoom() {
     const user = ui.username.value.trim();
-    const room = ui.roomId.value.trim();
-    if (!user || !room) { ui.joinError.innerText = 'Preencha nome e sala.'; return; }
+    let room = ui.roomId.value.trim();
+
+    if (!user) { ui.joinError.innerText = 'Preencha o seu nome.'; return; }
+    
+    // Se não digitou uma sala, gera uma aleatória
+    if (!room) { 
+        room = generateRoomId(); 
+    }
 
     ui.btnJoin.disabled = true;
     setStateLabel('Conectando...', 'connecting');
@@ -132,6 +152,10 @@ async function joinRoom() {
             ui.roomScreen.classList.remove('hidden');
             ui.lblRoom.innerText = room;
             ui.lblParticipants.innerText = response.totalParticipants;
+
+            // Altera a URL no navegador sem recarregar a página
+            const newUrl = `${window.location.origin}${window.location.pathname}?room=${room}`;
+            window.history.pushState({ path: newUrl }, '', newUrl);
 
             await initMediasoupDevice(response.routerRtpCapabilities);
             await createTransports(response.iceServers);
@@ -176,6 +200,10 @@ function leaveRoom() {
     ui.joinScreen.classList.remove('hidden');
     ui.btnJoin.disabled = false;
     closeSidebar();
+
+    // Limpa o parâmetro ?room= da URL ao sair
+    const cleanUrl = `${window.location.origin}${window.location.pathname}`;
+    window.history.pushState({ path: cleanUrl }, '', cleanUrl);
 }
 
 function resetState() {
@@ -259,7 +287,7 @@ async function startScreenShare() {
     try {
         localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
         
-        // Producer de Vídeo
+        // 1. Inicia o Producer de Vídeo
         const videoTrack = localStream.getVideoTracks()[0];
         if (videoTrack) {
             videoTrack.onended = () => stopScreenShare();
@@ -267,7 +295,7 @@ async function startScreenShare() {
             localProducers.push(videoProducer);
         }
         
-        // Producer de Áudio
+        // 2. Inicia o Producer de Áudio
         const audioTrack = localStream.getAudioTracks()[0];
         if (audioTrack) {
             const audioProducer = await producerTransport.produce({ track: audioTrack });
@@ -304,36 +332,42 @@ function stopScreenShare() {
 // CONSUME
 // ==================================================
 async function consume(producerId, remoteSocketId, username) {
-    try {
-        const { rtpCapabilities } = device;
-        const res = await requestSocketPromise('consume', { producerId, rtpCapabilities });
-        
-        const consumer = await consumerTransport.consume({
-            id: res.id,
-            producerId: res.producerId,
-            kind: res.kind,
-            rtpParameters: res.rtpParameters
-        });
-        
-        consumers.set(consumer.id, consumer);
-        producerToSocket.set(producerId, remoteSocketId);
-        
-        let meta = streamsMeta.get(remoteSocketId);
-        if (!meta) {
-            const stream = new MediaStream([consumer.track]);
-            addVideoTile(remoteSocketId, stream, false, username || `Stream ${streamsMeta.size + 1}`);
-        } else {
-            meta.stream.addTrack(consumer.track);
-            const tile = document.getElementById(`tile-${remoteSocketId}`);
-            if (tile) {
-                tile.querySelectorAll('video').forEach(v => { v.srcObject = meta.stream; });
+    // Adiciona esta execução ao final da fila
+    consumeQueue = consumeQueue.then(async () => {
+        try {
+            const { rtpCapabilities } = device;
+            
+            const res = await requestSocketPromise('consume', { producerId, rtpCapabilities });
+            
+            const consumer = await consumerTransport.consume({
+                id: res.id,
+                producerId: res.producerId,
+                kind: res.kind,
+                rtpParameters: res.rtpParameters
+            });
+            
+            consumers.set(consumer.id, consumer);
+            producerToSocket.set(producerId, remoteSocketId);
+            
+            let meta = streamsMeta.get(remoteSocketId);
+            if (!meta) {
+                const stream = new MediaStream([consumer.track]);
+                addVideoTile(remoteSocketId, stream, false, username || `Stream ${streamsMeta.size + 1}`);
+            } else {
+                meta.stream.addTrack(consumer.track);
+                const tile = document.getElementById(`tile-${remoteSocketId}`);
+                if (tile) {
+                    tile.querySelectorAll('video').forEach(v => { v.srcObject = meta.stream; });
+                }
             }
+            
+            await requestSocketPromise('resume-consumer', { consumerId: consumer.id });
+        } catch (error) {
+            log('consume: erro', error);
         }
-        
-        await requestSocketPromise('resume-consumer', { consumerId: consumer.id });
-    } catch (error) {
-        log('consume: erro', error);
-    }
+    });
+
+    await consumeQueue;
 }
 
 // ==================================================
@@ -463,8 +497,6 @@ function removeVideoTile(key) {
 }
 
 // Toggle visibility
-// When hidden: tile gets .tile-hidden (display:none via CSS),
-// but the stream meta stays so the sidebar can show it and re-enable it.
 function toggleStreamVisibility(key) {
     const meta = streamsMeta.get(key);
     if (!meta) return;
@@ -734,3 +766,39 @@ function requestSocketPromise(event, data) {
         });
     });
 }
+
+// ==================================================
+// LINK SHARING
+// ==================================================
+async function copyRoomLink() {
+    const room = ui.lblRoom.innerText;
+    if (!room || room === '---') return;
+    
+    // Constrói a URL completa com o parâmetro da sala
+    const link = `${window.location.origin}${window.location.pathname}?room=${room}`;
+    
+    try {
+        await navigator.clipboard.writeText(link);
+        
+        // Feedback visual: troca o ícone temporariamente para um "check"
+        const originalHTML = ui.btnCopyLink.innerHTML;
+        ui.btnCopyLink.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor" style="color: var(--success);"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>`;
+        
+        setTimeout(() => { ui.btnCopyLink.innerHTML = originalHTML; }, 2000);
+    } catch (err) {
+        log('Erro ao copiar link', err);
+    }
+}
+
+// ==================================================
+// INITIALIZATION (AUTO-FILL FROM URL)
+// ==================================================
+window.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomParam = urlParams.get('room');
+    
+    if (roomParam) {
+        ui.roomId.value = roomParam;
+        ui.username.focus();
+    }
+});
