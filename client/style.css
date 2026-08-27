@@ -428,6 +428,8 @@ body {
 
     /* Default: single column, auto-fit */
     grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr));
+    justify-items: stretch;
+    align-items: stretch
 }
 
 /* Dynamic grid layouts by stream count (set via JS on body) */
