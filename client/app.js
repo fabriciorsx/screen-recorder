@@ -18,11 +18,16 @@ let socket = null;
 let device = null;
 let producerTransport = null;
 let consumerTransport = null;
-let localProducer = null;
+
+// Agora usamos um array para suportar tanto áudio quanto vídeo
+let localProducers = [];
 let localStream = null;
 let consumers = new Map();
 
-// Stream metadata: key → { id, label, isLocal, hidden, stream }
+// Mapa para associar producerIds aos socketIds (agrupamento)
+let producerToSocket = new Map();
+
+// Stream metadata: key -> { id, label, isLocal, hidden, stream }
 let streamsMeta = new Map();
 
 // ==================================================
@@ -94,6 +99,7 @@ function setStateLabel(text, type = 'connected') {
     badge.className = 'state-badge';
     if (type === 'disconnected') badge.classList.add('disconnected');
     if (type === 'connecting')   badge.classList.add('connecting');
+
     if (ui.lblStateMobile) {
         ui.lblStateMobile.style.color =
             type === 'connected'  ? 'var(--success)' :
@@ -111,20 +117,25 @@ async function joinRoom() {
 
     ui.btnJoin.disabled = true;
     setStateLabel('Conectando...', 'connecting');
+
     socket = io();
 
     socket.on('connect', () => {
         log('Socket conectado', { socketId: socket.id });
         setStateLabel('Conectado', 'connected');
+
         socket.emit('join-room', { roomId: room, username: user }, async (response) => {
             if (response.error) { ui.joinError.innerText = response.error; socket.disconnect(); return; }
+            
             log('joinRoom: sucesso', response);
             ui.joinScreen.classList.add('hidden');
             ui.roomScreen.classList.remove('hidden');
             ui.lblRoom.innerText = room;
             ui.lblParticipants.innerText = response.totalParticipants;
+
             await initMediasoupDevice(response.routerRtpCapabilities);
             await createTransports(response.iceServers);
+            
             fetchExistingProducers();
         });
     });
@@ -144,11 +155,15 @@ async function joinRoom() {
     });
 
     socket.on('screen-sharing-started', async (data) => {
-        await consume(data.producerId);
+        await consume(data.producerId, data.socketId, data.username);
     });
 
     socket.on('screen-sharing-stopped', (data) => {
-        removeVideoTile(data.producerId);
+        const remoteSocketId = producerToSocket.get(data.producerId);
+        if (remoteSocketId) {
+            removeVideoTile(remoteSocketId);
+            producerToSocket.delete(data.producerId);
+        }
     });
 }
 
@@ -156,6 +171,7 @@ function leaveRoom() {
     socket.emit('leave-room');
     socket.disconnect();
     resetState();
+    
     ui.roomScreen.classList.add('hidden');
     ui.joinScreen.classList.remove('hidden');
     ui.btnJoin.disabled = false;
@@ -163,20 +179,29 @@ function leaveRoom() {
 }
 
 function resetState() {
-    if (localProducer)     { localProducer.close(); localProducer = null; }
-    if (localStream)       { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+    if (localProducers.length > 0) {
+        localProducers.forEach(p => p.close());
+        localProducers = [];
+    }
+    if (localStream) { 
+        localStream.getTracks().forEach(t => t.stop()); 
+        localStream = null; 
+    }
     if (producerTransport) { producerTransport.close(); producerTransport = null; }
     if (consumerTransport) { consumerTransport.close(); consumerTransport = null; }
+
     consumers.forEach(c => c.close());
     consumers.clear();
     streamsMeta.clear();
+    producerToSocket.clear();
 
     const tiles = ui.videoGrid.querySelectorAll('.video-tile');
     tiles.forEach(t => t.remove());
     ui.videoPlaceholder.classList.remove('hidden');
+    
     updateGridLayout();
     renderStreamList();
-
+    
     ui.btnShare.classList.remove('hidden');
     ui.btnStopShare.classList.add('hidden');
 }
@@ -196,12 +221,13 @@ async function initMediasoupDevice(routerRtpCapabilities) {
 async function createTransports(iceServers) {
     const prodParams = await requestSocketPromise('create-transport', { direction: 'producer' });
     producerTransport = device.createSendTransport({ ...prodParams.transportOptions, iceServers });
-
+    
     producerTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
         socket.emit('connect-transport', { direction: 'producer', dtlsParameters }, (res) => {
             res.error ? errback(new Error(res.error)) : callback();
         });
     });
+
     producerTransport.on('produce', async (parameters, callback, errback) => {
         socket.emit('produce', { kind: parameters.kind, rtpParameters: parameters.rtpParameters }, (res) => {
             res.error ? errback(new Error(res.error)) : callback({ id: res.id });
@@ -210,7 +236,7 @@ async function createTransports(iceServers) {
 
     const consParams = await requestSocketPromise('create-transport', { direction: 'consumer' });
     consumerTransport = device.createRecvTransport({ ...consParams.transportOptions, iceServers });
-
+    
     consumerTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
         socket.emit('connect-transport', { direction: 'consumer', dtlsParameters }, (res) => {
             res.error ? errback(new Error(res.error)) : callback();
@@ -220,7 +246,9 @@ async function createTransports(iceServers) {
 
 function fetchExistingProducers() {
     socket.emit('get-producers', {}, async (res) => {
-        for (const prod of res.producers) await consume(prod.producerId);
+        for (const prod of res.producers) {
+            await consume(prod.producerId, prod.socketId, prod.username);
+        }
     });
 }
 
@@ -230,22 +258,38 @@ function fetchExistingProducers() {
 async function startScreenShare() {
     try {
         localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        
+        // Producer de Vídeo
         const videoTrack = localStream.getVideoTracks()[0];
-        videoTrack.onended = () => stopScreenShare();
-        localProducer = await producerTransport.produce({ track: videoTrack });
+        if (videoTrack) {
+            videoTrack.onended = () => stopScreenShare();
+            const videoProducer = await producerTransport.produce({ track: videoTrack });
+            localProducers.push(videoProducer);
+        }
+        
+        // Producer de Áudio
+        const audioTrack = localStream.getAudioTracks()[0];
+        if (audioTrack) {
+            const audioProducer = await producerTransport.produce({ track: audioTrack });
+            localProducers.push(audioProducer);
+        }
+
         ui.btnShare.classList.add('hidden');
         ui.btnStopShare.classList.remove('hidden');
-        addVideoTile(localProducer.id, localStream, true, 'Você (local)');
+        
+        addVideoTile('local', localStream, true, 'Você (local)');
     } catch (error) {
         log('startScreenShare: erro', error);
     }
 }
 
 function stopScreenShare() {
-    if (localProducer) {
-        socket.emit('stop-sharing', { producerId: localProducer.id });
-        localProducer.close();
-        localProducer = null;
+    if (localProducers.length > 0) {
+        localProducers.forEach(p => {
+            socket.emit('stop-sharing', { producerId: p.id });
+            p.close();
+        });
+        localProducers = [];
     }
     if (localStream) {
         localStream.getTracks().forEach(t => t.stop());
@@ -259,19 +303,33 @@ function stopScreenShare() {
 // ==================================================
 // CONSUME
 // ==================================================
-async function consume(producerId) {
+async function consume(producerId, remoteSocketId, username) {
     try {
         const { rtpCapabilities } = device;
         const res = await requestSocketPromise('consume', { producerId, rtpCapabilities });
+        
         const consumer = await consumerTransport.consume({
             id: res.id,
             producerId: res.producerId,
             kind: res.kind,
             rtpParameters: res.rtpParameters
         });
+        
         consumers.set(consumer.id, consumer);
-        const stream = new MediaStream([consumer.track]);
-        addVideoTile(producerId, stream, false, `Stream ${streamsMeta.size + 1}`);
+        producerToSocket.set(producerId, remoteSocketId);
+        
+        let meta = streamsMeta.get(remoteSocketId);
+        if (!meta) {
+            const stream = new MediaStream([consumer.track]);
+            addVideoTile(remoteSocketId, stream, false, username || `Stream ${streamsMeta.size + 1}`);
+        } else {
+            meta.stream.addTrack(consumer.track);
+            const tile = document.getElementById(`tile-${remoteSocketId}`);
+            if (tile) {
+                tile.querySelectorAll('video').forEach(v => { v.srcObject = meta.stream; });
+            }
+        }
+        
         await requestSocketPromise('resume-consumer', { consumerId: consumer.id });
     } catch (error) {
         log('consume: erro', error);
@@ -281,45 +339,44 @@ async function consume(producerId) {
 // ==================================================
 // VIDEO TILE MANAGEMENT
 // ==================================================
-function tileId(producerId, isLocal) {
-    return isLocal ? 'tile-local' : `tile-${producerId}`;
+function tileId(key, isLocal) {
+    return isLocal ? 'tile-local' : `tile-${key}`;
 }
 
-function addVideoTile(producerId, stream, isLocal, label = 'Stream') {
+function addVideoTile(key, stream, isLocal, label = 'Stream') {
     ui.videoPlaceholder.classList.add('hidden');
-
-    const id = tileId(producerId, isLocal);
+    const id = tileId(key, isLocal);
+    
     let tile = document.getElementById(id);
-
     if (!tile) {
-        tile = buildTile(id, isLocal, label, producerId);
+        tile = buildTile(id, isLocal, label, key);
         ui.videoGrid.appendChild(tile);
     }
-
+    
     // Set stream on both the tile video and the zoom-canvas video
     const tileVideo = tile.querySelector('.tile-video');
     if (tileVideo) tileVideo.srcObject = stream;
-
+    
     const zoomVideo = tile.querySelector('.zoom-canvas video');
     if (zoomVideo) zoomVideo.srcObject = stream;
 
-    const metaKey = isLocal ? 'local' : producerId;
+    const metaKey = isLocal ? 'local' : key;
     streamsMeta.set(metaKey, { id: metaKey, label, isLocal, hidden: false, stream });
-
+    
     updateGridLayout();
     renderStreamList();
 }
 
-function buildTile(id, isLocal, label, producerId) {
+function buildTile(id, isLocal, label, key) {
     const tile = document.createElement('div');
     tile.id = id;
     tile.className = 'video-tile' + (isLocal ? ' is-local' : '');
-    tile.dataset.producerId = isLocal ? 'local' : producerId;
+    tile.dataset.key = isLocal ? 'local' : key;
 
-    // ── Zoom canvas (handles zoom/pan, sits behind overlay) ──
+    // --- Zoom canvas (handles zoom/pan, sits behind overlay) ---
     const zoomCanvas = document.createElement('div');
     zoomCanvas.className = 'zoom-canvas';
-
+    
     const zoomVideo = document.createElement('video');
     zoomVideo.autoplay = true;
     zoomVideo.playsInline = true;
@@ -336,14 +393,15 @@ function buildTile(id, isLocal, label, producerId) {
     tileVideo.style.display = 'none'; // used only as srcObject ref
     tile.appendChild(tileVideo);
 
-    // ── Tile hover overlay ──
+    // --- Tile hover overlay ---
     const overlay = document.createElement('div');
     overlay.className = 'tile-overlay';
+    
     overlay.innerHTML = `
         <div class="tile-label">
             <span class="tile-label-text">${label}</span>
-            ${isLocal
-                ? '<span class="local-badge">LOCAL</span>'
+            ${isLocal 
+                ? '<span class="local-badge">LOCAL</span>' 
                 : '<span class="live-badge">LIVE</span>'
             }
         </div>
@@ -355,21 +413,23 @@ function buildTile(id, isLocal, label, producerId) {
                 <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2.003 2.003 0 012.45 2.45l1.514 1.514a4 4 0 00-5.478-5.478z" clip-rule="evenodd"/><path d="M12.454 16.697L9.75 13.992a4 4 0 01-3.742-3.741L2.335 6.578A9.98 9.98 0 00.458 10c1.274 4.057 5.065 7 9.542 7 .847 0 1.669-.105 2.454-.303z"/></svg>
             </button>
         </div>`;
+    
     tile.appendChild(overlay);
 
-    // ── Zoom HUD (visible only in native fullscreen) ──
+    // --- Zoom HUD (visible only in native fullscreen) ---
     const hud = buildZoomHud();
     tile.appendChild(hud);
 
-    // ── Wire up buttons ──
+    // --- Wire up buttons ---
     overlay.querySelector('.btn-fullscreen').addEventListener('click', (e) => {
         e.stopPropagation();
         enterNativeFullscreen(tile);
     });
+
     overlay.querySelector('.btn-hide').addEventListener('click', (e) => {
         e.stopPropagation();
-        const key = isLocal ? 'local' : producerId;
-        toggleStreamVisibility(key);
+        const stateKey = isLocal ? 'local' : key;
+        toggleStreamVisibility(stateKey);
     });
 
     // Double-click = native fullscreen
@@ -381,26 +441,28 @@ function buildTile(id, isLocal, label, producerId) {
     return tile;
 }
 
-function removeVideoTile(producerId) {
-    const isLocal = producerId === 'local';
-    const id = isLocal ? 'tile-local' : `tile-${producerId}`;
+function removeVideoTile(key) {
+    const isLocal = key === 'local';
+    const id = isLocal ? 'tile-local' : `tile-${key}`;
     const tile = document.getElementById(id);
+    
     if (tile) {
         // Exit fullscreen if this tile is the fullscreen element
         if (document.fullscreenElement === tile) document.exitFullscreen().catch(() => {});
         tile.querySelectorAll('video').forEach(v => { v.srcObject = null; });
         tile.remove();
     }
-    streamsMeta.delete(isLocal ? 'local' : producerId);
+    
+    streamsMeta.delete(isLocal ? 'local' : key);
 
     const tiles = ui.videoGrid.querySelectorAll('.video-tile');
     if (tiles.length === 0) ui.videoPlaceholder.classList.remove('hidden');
-
+    
     updateGridLayout();
     renderStreamList();
 }
 
-// ── Toggle visibility ──
+// Toggle visibility
 // When hidden: tile gets .tile-hidden (display:none via CSS),
 // but the stream meta stays so the sidebar can show it and re-enable it.
 function toggleStreamVisibility(key) {
@@ -433,7 +495,7 @@ function toggleStreamVisibility(key) {
 function updateGridLayout() {
     const visibleCount = Array.from(streamsMeta.values()).filter(m => !m.hidden).length;
     document.body.dataset.streams = visibleCount;
-
+    
     // Show placeholder only when there are no streams at all (hidden or otherwise)
     const totalTiles = ui.videoGrid.querySelectorAll('.video-tile').length;
     if (totalTiles === 0) {
@@ -448,7 +510,7 @@ function updateGridLayout() {
 // ==================================================
 function renderStreamList() {
     ui.streamList.innerHTML = '';
-
+    
     if (streamsMeta.size === 0) {
         const li = document.createElement('li');
         li.className = 'stream-list-empty';
@@ -460,11 +522,11 @@ function renderStreamList() {
     streamsMeta.forEach((meta) => {
         const li = document.createElement('li');
         li.className = 'stream-list-item' + (meta.hidden ? ' hidden-stream' : '');
-
+        
         const eyeOnSvg = `<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>`;
         const eyeOffSvg = `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2.003 2.003 0 012.45 2.45l1.514 1.514a4 4 0 00-5.478-5.478z" clip-rule="evenodd"/><path d="M12.454 16.697L9.75 13.992a4 4 0 01-3.742-3.741L2.335 6.578A9.98 9.98 0 00.458 10c1.274 4.057 5.065 7 9.542 7 .847 0 1.669-.105 2.454-.303z"/></svg>`;
         const fsSvg = `<svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 3h5v2H5v3H3V3zm9 0h5v5h-2V5h-3V3zM3 12h2v3h3v2H3v-5zm12 3h-3v2h5v-5h-2v3z"/></svg>`;
-
+        
         li.innerHTML = `
             <span class="stream-dot"></span>
             <span class="stream-name">${meta.label}</span>
@@ -476,7 +538,7 @@ function renderStreamList() {
                     ${fsSvg}
                 </button>
             </div>`;
-
+            
         li.querySelector('.stream-btn-toggle').addEventListener('click', (e) => {
             e.stopPropagation();
             toggleStreamVisibility(meta.id);
@@ -494,12 +556,13 @@ function renderStreamList() {
 }
 
 // ==================================================
-// NATIVE FULLSCREEN (Fullscreen API — like YouTube)
+// NATIVE FULLSCREEN (Fullscreen API - like YouTube)
 // ==================================================
 function enterNativeFullscreen(tileEl) {
-    const req = tileEl.requestFullscreen?.bind(tileEl)
-        || tileEl.webkitRequestFullscreen?.bind(tileEl)
+    const req = tileEl.requestFullscreen?.bind(tileEl) 
+        || tileEl.webkitRequestFullscreen?.bind(tileEl) 
         || tileEl.mozRequestFullScreen?.bind(tileEl);
+        
     if (req) req().catch(err => log('Fullscreen error', err));
 }
 
@@ -549,7 +612,7 @@ function setTileZoom(canvas, scale, px, py, animate) {
     }
 
     video.style.transform = `translate(calc(-50% + ${px}px), calc(-50% + ${py}px)) scale(${scale})`;
-
+    
     // Update cursor
     canvas.classList.toggle('zoomable', scale > 1);
     canvas.classList.remove('grabbing');
@@ -591,12 +654,14 @@ function initZoomPan(canvas, hud) {
         startPx = px; startPy = py;
         canvas.classList.add('grabbing');
     });
+
     document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
         px = startPx + (e.clientX - startX);
         py = startPy + (e.clientY - startY);
         setTileZoom(canvas, scale, px, py, false);
     });
+
     document.addEventListener('mouseup', () => {
         isDragging = false;
         canvas.classList.remove('grabbing');
@@ -604,11 +669,12 @@ function initZoomPan(canvas, hud) {
 
     // Touch pinch-zoom + pan
     let lastDist = null, startTouchPx, startTouchPy;
+    
     canvas.addEventListener('touchstart', (e) => {
         if (!isInFullscreen()) return;
         if (e.touches.length === 2) {
             lastDist = Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientX - e.touches[1].clientX, 
                 e.touches[0].clientY - e.touches[1].clientY
             );
             startTouchPx = px; startTouchPy = py;
@@ -624,7 +690,7 @@ function initZoomPan(canvas, hud) {
         if (e.touches.length === 2 && lastDist !== null) {
             e.preventDefault();
             const dist = Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientX - e.touches[1].clientX, 
                 e.touches[0].clientY - e.touches[1].clientY
             );
             applyZoom(scale + (dist - lastDist) / 150, false);
@@ -647,6 +713,7 @@ function initZoomPan(canvas, hud) {
     document.addEventListener('keydown', (e) => {
         const tile = canvas.closest('.video-tile');
         if (document.fullscreenElement !== tile) return;
+        
         switch (e.key) {
             case 'Escape': document.exitFullscreen().catch(() => {}); break;
             case '+': case '=': applyZoom(scale + ZOOM_STEP); break;
