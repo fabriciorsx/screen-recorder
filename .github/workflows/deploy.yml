@@ -55,7 +55,7 @@ jobs:
 
       - name: Upload frontend
         run: |
-          rsync -avz --delete \
+          rsync -avz --delete --mkpath \
             client/dist/ \
             ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/var/www/screen-recorder/client/dist/
 
@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload backend
         run: |
-          rsync -avz --delete \
+          rsync -avz --delete --mkpath\
             --exclude node_modules \
             --exclude .env \
             server/ \
