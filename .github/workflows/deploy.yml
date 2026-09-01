@@ -77,9 +77,13 @@ jobs:
 
       - name: Install backend and restart
         run: |
-          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
-            cd /var/www/screen-recorder/server
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} bash -l << 'EOF'
+            export NVM_DIR="$HOME/.nvm"
 
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            
+            cd /var/www/screen-recorder/server
+            
             npm ci --omit=dev
 
             pm2 restart backend || pm2 start npm --name backend -- start
