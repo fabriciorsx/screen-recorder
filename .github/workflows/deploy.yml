@@ -1,0 +1,88 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # =========================
+      # BAIXAR PROJETO
+      # =========================
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # =========================
+      # NODE
+      # =========================
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # =========================
+      # FRONTEND
+      # =========================
+
+      - name: Install frontend dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Build Vite
+        working-directory: client
+        run: npm run build
+
+      # =========================
+      # CONFIGURAR SSH
+      # =========================
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.VM_HOST }}" >> ~/.ssh/known_hosts
+
+      # =========================
+      # ENVIAR FRONTEND
+      # =========================
+
+      - name: Upload frontend
+        run: |
+          rsync -avz --delete \
+            client/dist/ \
+            ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/var/www/client/dist/
+
+      # =========================
+      # ENVIAR BACKEND
+      # =========================
+
+      - name: Upload backend
+        run: |
+          rsync -avz --delete \
+            --exclude node_modules \
+            --exclude .env \
+            server/ \
+            ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/var/www/server/
+
+      # =========================
+      # INSTALAR E REINICIAR BACKEND
+      # =========================
+
+      - name: Install backend and restart
+        run: |
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+            cd /var/www/server
+
+            npm ci --omit=dev
+
+            pm2 restart backend || pm2 start npm --name backend -- start
+
+            pm2 save
+          EOF
