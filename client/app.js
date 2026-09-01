@@ -33,10 +33,8 @@ let localProducers = [];
 let localStream = null;
 let consumers = new Map();
 
-// Mapa para associar producerIds aos socketIds (agrupamento)
 let producerToSocket = new Map();
 
-// Fila para evitar condição de corrida ao consumir múltiplas faixas simultaneamente
 let consumeQueue = Promise.resolve();
 
 // Stream metadata: key -> { id, label, isLocal, hidden, stream }
