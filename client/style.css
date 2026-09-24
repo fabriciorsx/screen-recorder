@@ -356,6 +356,7 @@ body {
 }
 .stream-list-item .stream-actions {
     display: flex;
+    align-items: center;
     gap: 4px;
     opacity: 0;
     transition: opacity var(--t-fast);
@@ -377,6 +378,39 @@ body {
 .stream-list-item .stream-actions button svg { width: 12px; height: 12px; }
 .stream-list-item.hidden-stream .stream-dot { background: var(--text-muted); }
 .stream-list-item.hidden-stream .stream-name { color: var(--text-muted); }
+
+/* Sidebar volume slider */
+.sidebar-vol {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 52px;
+    height: 3px;
+    background: var(--border-strong);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--t-fast);
+    flex-shrink: 0;
+}
+.sidebar-vol::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+    cursor: pointer;
+    transition: background var(--t-fast);
+}
+.sidebar-vol::-webkit-slider-thumb:hover { background: var(--text-primary); }
+.sidebar-vol::-moz-range-thumb {
+    width: 10px; height: 10px;
+    border: none;
+    border-radius: 50%;
+    background: var(--text-secondary);
+    cursor: pointer;
+}
+.stream-list-item:hover .sidebar-vol { opacity: 1; }
+.sidebar-vol:disabled { opacity: 0 !important; pointer-events: none; }
 
 .sidebar-bottom {
     padding: 12px 12px;
@@ -426,13 +460,11 @@ body {
     gap: 12px;
     align-content: start;
 
-    /* Default: single column, auto-fit */
     grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr));
     justify-items: stretch;
     align-items: stretch
 }
 
-/* Dynamic grid layouts by stream count (set via JS on body) */
 body[data-streams="1"] #video-grid {
     grid-template-columns: 1fr;
     align-content: center;
@@ -501,7 +533,6 @@ body[data-streams="4"] #video-grid {
     box-shadow: 0 4px 24px var(--accent-glow);
 }
 
-/* tile-video is just a srcObject holder, kept invisible */
 .video-tile .tile-video {
     display: none !important;
 }
@@ -549,6 +580,7 @@ body[data-streams="4"] #video-grid {
 
 .tile-controls {
     display: flex;
+    align-items: center;
     gap: 6px;
 }
 .tile-btn {
@@ -563,9 +595,46 @@ body[data-streams="4"] #video-grid {
     color: #fff;
     cursor: pointer;
     transition: background var(--t-fast);
+    flex-shrink: 0;
 }
 .tile-btn:hover { background: rgba(255,255,255,0.25); }
 .tile-btn svg { width: 14px; height: 14px; }
+
+/* Volume control no tile */
+.volume-control {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.volume-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 64px;
+    height: 3px;
+    background: rgba(255,255,255,0.25);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+    transition: background var(--t-fast);
+}
+.volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 11px; height: 11px;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    transition: transform var(--t-fast);
+}
+.volume-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+.volume-slider::-moz-range-thumb {
+    width: 11px; height: 11px;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+}
 
 /* Resize handle */
 .tile-resize {
@@ -587,51 +656,44 @@ body[data-streams="4"] #video-grid {
 }
 
 /* =============================================
-   HIDDEN TILE — stays in sidebar list, removed from grid
+   HIDDEN TILE
    ============================================= */
 .video-tile.tile-hidden {
     display: none !important;
 }
 
 /* =============================================
-   NATIVE FULLSCREEN — styles that apply when
-   a .video-tile enters fullscreen (Fullscreen API)
+   NATIVE FULLSCREEN
    ============================================= */
 .video-tile:fullscreen,
 .video-tile:-webkit-full-screen {
     background: #000;
     border-radius: 0;
     border: none;
-    /* override aspect-ratio so it fills the screen */
     aspect-ratio: unset;
     width: 100vw !important;
     height: 100vh !important;
 }
 
-/* zoom-canvas fills fullscreen element completely */
 .video-tile:fullscreen .zoom-canvas,
 .video-tile:-webkit-full-screen .zoom-canvas {
     position: absolute;
     inset: 0;
 }
 
-/* video inside zoom-canvas fills its container */
 .video-tile:fullscreen .zoom-canvas video,
 .video-tile:-webkit-full-screen .zoom-canvas video {
     width: 100vw;
     height: 100vh;
 }
 
-/* Show overlay controls on hover in fullscreen */
 .video-tile:fullscreen .tile-overlay,
 .video-tile:-webkit-full-screen .tile-overlay {
     background: linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%);
 }
 
 /* =============================================
-   ZOOM HUD — floats over fullscreen video
-   Uses ::backdrop-compatible overlay trick:
-   rendered inside the tile when fullscreen
+   ZOOM HUD
    ============================================= */
 .zoom-hud {
     position: absolute;
@@ -650,7 +712,6 @@ body[data-streams="4"] #video-grid {
     transition: opacity var(--t-base);
 }
 
-/* Show HUD when tile is fullscreen */
 .video-tile:fullscreen .zoom-hud,
 .video-tile:-webkit-full-screen .zoom-hud {
     display: flex;
@@ -683,7 +744,7 @@ body[data-streams="4"] #video-grid {
     text-align: center;
 }
 
-/* Zoom canvas inside fullscreen tile */
+/* Zoom canvas */
 .zoom-canvas {
     position: absolute;
     inset: 0;
@@ -706,7 +767,6 @@ body[data-streams="4"] #video-grid {
     user-select: none;
 }
 
-/* Fullscreen overlay — kept for non-fullscreen-API fallback only, hidden by default */
 #fullscreen-overlay { display: none; }
 
 /* =============================================
@@ -718,20 +778,20 @@ body[data-streams="4"] #video-grid {
         top: 0; left: 0; bottom: 0;
         transform: translateX(-100%);
         box-shadow: 4px 0 24px rgba(0,0,0,0.4);
-        z-index: 20;   /* above backdrop (z:10) */
+        z-index: 20;
     }
     #sidebar.open { transform: translateX(0); }
-    
+
     .mobile-topbar { display: flex; }
-    
+
     #main-area { overflow: hidden; }
-    
+
     #video-grid {
         grid-template-columns: 1fr !important;
         padding: 10px;
         gap: 8px;
     }
-    
+
     body[data-streams="2"] #video-grid,
     body[data-streams="3"] #video-grid,
     body[data-streams="4"] #video-grid {
@@ -771,6 +831,6 @@ body[data-streams="4"] #video-grid {
     position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.5);
-    z-index: 10;   /* below sidebar (z:20) but above main content */
+    z-index: 10;
 }
 #sidebar-backdrop.visible { display: block; }
